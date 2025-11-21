@@ -36,44 +36,48 @@ jobs:
       - name: Checkout source tree
         uses: actions/checkout@v5
         with:
-          fetch-depth: 0  # 获取完整的 Git 历史，用于版本号计算
+          fetch-depth: 0
       
       - name: Determine version
         id: version
         run: |
           if [ "${{ github.event_name }}" == "release" ]; then
-            # 从 Release 标签获取版本号（去掉 v 前缀）
+            # 从 Release 标签获取版本号
             VERSION="${{ github.ref_name }}"
+            # 去掉 v 前缀
             VERSION="${VERSION#v}"
-            echo "📦 Release build - Version: $VERSION"
+            # 去掉任何后缀（如 -beta, -alpha）
+            VERSION=$(echo "$VERSION" | sed 's/-.*$//')
+            echo "📦 Release build - Raw version: ${{ github.ref_name }}"
           elif [ "${{ github.event_name }}" == "pull_request" ]; then
-            # PR 构建使用 PR 编号
-            VERSION="0.0.0-pr${{ github.event.pull_request.number }}"
-            echo "🔀 PR build - Version: $VERSION"
+            VERSION="0.0.0"
+            echo "🔀 PR build"
           else
-            # Push 构建使用日期+短commit
-            VERSION="$(date +%Y.%m.%d)-$(git rev-parse --short HEAD)"
-            echo "🚀 Development build - Version: $VERSION"
+            # 使用纯数字日期格式
+            VERSION="$(date +%Y.%m.%d)"
+            echo "🚀 Development build"
           fi
           
-          # 清理版本号，确保符合 APK 规范（只保留数字、点和连字符）
-          VERSION_CLEAN=$(echo "$VERSION" | sed 's/[^0-9.\-]//g')
+          # 严格清理版本号：只保留数字和点
+          VERSION=$(echo "$VERSION" | sed 's/[^0-9.]//g')
           
-          # 如果清理后变了，显示警告
-          if [ "$VERSION" != "$VERSION_CLEAN" ]; then
-            echo "⚠️  Cleaned version from '$VERSION' to '$VERSION_CLEAN'"
-            VERSION="$VERSION_CLEAN"
+          # 确保版本号不为空
+          if [ -z "$VERSION" ]; then
+            VERSION="1.0.0"
+            echo "⚠️  Version empty, using fallback"
           fi
           
           echo "✅ Final version: $VERSION"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           
-          # 动态更新 Makefile 中的版本号
-          sed -i "s/^PKG_VERSION:=.*/PKG_VERSION:=$VERSION/" Makefile
-          
-          # 验证修改
-          echo "📄 Updated Makefile:"
-          grep "PKG_VERSION" Makefile
+          # 同时更新 Makefile（作为备用）
+          if grep -q "^PKG_VERSION:=" Makefile; then
+            sed -i "s/^PKG_VERSION:=.*/PKG_VERSION:=$VERSION/" Makefile
+            echo "📝 Updated Makefile:"
+            grep "PKG_VERSION" Makefile
+          else
+            echo "⚠️  PKG_VERSION not found in Makefile"
+          fi
       
       - name: Checkout apk
         uses: actions/checkout@v5
@@ -121,8 +125,10 @@ jobs:
           sudo install -m0755 ipkg-build /usr/local/bin/ipkg-build
       
       - name: Build ipk file
+        env:
+          BUILD_VERSION: ${{ steps.version.outputs.version }}
         run: |
-          echo "🔨 Building version: ${{ steps.version.outputs.version }}"
+          echo "🔨 Building with version: $BUILD_VERSION"
           pushd .github
           fakeroot bash build-ipk.sh apk "${{ github.event_name }}"
           fakeroot bash build-ipk.sh ipk "${{ github.event_name }}"
@@ -130,8 +136,7 @@ jobs:
           echo "IPK_ASSET_NAME=$(ls *.ipk)" >> $GITHUB_ENV
           popd
           echo "✅ Build completed!"
-          echo "📦 APK: ${{ env.APK_ASSET_NAME }}"
-          echo "📦 IPK: ${{ env.IPK_ASSET_NAME }}"
+          ls -lh .github/*.{apk,ipk}
       
       - name: Publishing APK files to GitHub Artifacts
         uses: actions/upload-artifact@v4
