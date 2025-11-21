@@ -21,7 +21,7 @@ function get_mk_value() {
 
 PKG_NAME="$(get_mk_value "PKG_NAME")"
 
-# ====== 修改这部分：优先使用环境变量 ======
+# ====== 优先使用环境变量 ======
 if [ "$RELEASE_TYPE" == "release" ]; then
 	# 优先使用环境变量 BUILD_VERSION（从 GitHub Actions 传入）
 	if [ -n "$BUILD_VERSION" ]; then
