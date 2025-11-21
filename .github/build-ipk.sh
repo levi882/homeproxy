@@ -20,11 +20,44 @@ function get_mk_value() {
 }
 
 PKG_NAME="$(get_mk_value "PKG_NAME")"
+
+# ====== 修改这部分：优先使用环境变量 ======
 if [ "$RELEASE_TYPE" == "release" ]; then
-	PKG_VERSION="$(get_mk_value "PKG_VERSION")"
+	# 优先使用环境变量 BUILD_VERSION（从 GitHub Actions 传入）
+	if [ -n "$BUILD_VERSION" ]; then
+		PKG_VERSION="$BUILD_VERSION"
+		echo "Using version from environment: $PKG_VERSION"
+	else
+		# 回退到从 Makefile 读取
+		PKG_VERSION="$(get_mk_value "PKG_VERSION")"
+		echo "Using version from Makefile: $PKG_VERSION"
+	fi
+	
+	# 如果仍然为空，使用默认值
+	if [ -z "$PKG_VERSION" ]; then
+		PKG_VERSION="1.0.0"
+		echo "Warning: No version found, using default: $PKG_VERSION"
+	fi
 else
 	PKG_VERSION="$PKG_SOURCE_DATE_EPOCH~$(git rev-parse --short HEAD)"
+	echo "Using snapshot version: $PKG_VERSION"
 fi
+
+# 清理版本号，确保符合 APK 规范（只保留数字、点和连字符）
+PKG_VERSION_CLEAN=$(echo "$PKG_VERSION" | sed 's/[^0-9.\-]//g')
+if [ "$PKG_VERSION" != "$PKG_VERSION_CLEAN" ]; then
+	echo "Warning: Cleaned version from '$PKG_VERSION' to '$PKG_VERSION_CLEAN'"
+	PKG_VERSION="$PKG_VERSION_CLEAN"
+fi
+
+# 最终版本验证
+if [ -z "$PKG_VERSION" ] || [ "$PKG_VERSION" == "" ]; then
+	echo "ERROR: PKG_VERSION is empty!"
+	exit 1
+fi
+
+echo "Final package version: $PKG_VERSION"
+# ====== 修改结束 ======
 
 TEMP_DIR="$(mktemp -d -p $BASE_DIR)"
 TEMP_PKG_DIR="$TEMP_DIR/$PKG_NAME"
